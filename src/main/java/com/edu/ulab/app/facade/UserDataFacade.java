@@ -60,14 +60,69 @@ public class UserDataFacade {
                 .build();
     }
 
+    public List<UserBookResponse> getAll() {
+        List<UserDto> list = userService.getAll();
+        log.info("All users in getAll(): {}", list);
+        return list.stream()
+                .filter(Objects::nonNull)
+                .map(userDto -> UserBookResponse
+                        .builder()
+                        .userId(userDto.getId())
+                        .booksIdList(
+                                bookService.getBooksByUserId(userDto.getId())
+                                        .stream()
+                                        .map(BookDto::getId)
+                                        .collect(Collectors.toList())
+                        )
+                        .build())
+                .collect(Collectors.toList());
+    }
+
     public UserBookResponse updateUserWithBooks(UserBookRequest userBookRequest) {
-        return null;
+        log.info("Got user book update request in updateUserWithBooks(): {}", userBookRequest);
+        UserDto userDto = userMapper.userRequestToUserDto(userBookRequest.getUserRequest());
+        log.info("Mapped user request in updateUserWithBooks(): {}", userDto);
+        UserDto toUpdate = userService.updateUser(userDto);
+
+        List<Long> bookIdList = userBookRequest.getBookRequests()
+                .stream()
+                .filter(Objects::nonNull)
+                .map(bookMapper::bookRequestToBookDto)
+                .peek(bookDto -> bookDto.setUserId(toUpdate.getId()))
+                .peek(mappedBookDto -> log.info("mapped book: {}", mappedBookDto))
+                .map(bookService::createBook)
+                .peek(createdBook -> log.info("Created book: {}", createdBook))
+                .map(BookDto::getId)
+                .collect(Collectors.toList());
+        log.info("Collected book ids: {}", bookIdList);
+
+        return UserBookResponse.builder()
+                .userId(toUpdate.getId())
+                .booksIdList(bookIdList)
+                .build();
     }
 
     public UserBookResponse getUserWithBooks(Long userId) {
-        return null;
+        UserDto userDto = userService.getUserById(userId);
+        if (userDto == null) {
+            throw new NotFoundException("User with id: " + userId + " not found");
+        }
+        log.info("User in getUserWithBooks(): {}", userDto);
+        List<Long> booksId = bookService.getBooksByUserId(userDto.getId())
+                .stream()
+                .map(BookDto::getId)
+                .collect(Collectors.toList());
+        log.info("Collected bookIds in getUserWithBooks(): {}", booksId);
+        return UserBookResponse.builder()
+                .userId(userDto.getId())
+                .booksIdList(booksId)
+                .build();
     }
 
     public void deleteUserWithBooks(Long userId) {
+        List<BookDto> booksToDelete = bookService.getBooksByUserId(userId);
+        log.info("Books to delete in deleteUserWithBooks: {}", booksToDelete);
+        booksToDelete.forEach(bookDto ->  bookService.deleteBookById(bookDto.getId()));
+        userService.deleteUserById(userId);
     }
 }
